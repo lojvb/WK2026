@@ -86,12 +86,20 @@
   .pot .share b{font-variant-numeric:tabular-nums}
 
   /* ---- matches ---- */
-  .roundhdr{display:flex;align-items:center;gap:10px;margin:22px 4px 10px}
+  .roundhdr{display:flex;align-items:center;gap:10px;margin:22px 4px 10px;cursor:pointer;
+    background:var(--card);padding:12px 14px;border-radius:14px;
+    box-shadow:0 1px 2px rgba(14,27,42,.05);user-select:none}
   .roundhdr:first-child{margin-top:6px}
   .roundhdr h2{font-family:var(--disp);font-weight:400;font-size:18px;text-transform:uppercase;
     letter-spacing:.5px;margin:0}
   .roundhdr .ml{font-size:11px;font-weight:700;color:var(--accent);background:var(--accent-dim);
     padding:2px 8px;border-radius:99px;letter-spacing:.5px}
+  .roundhdr .rcount{margin-left:auto;font-size:12px;font-weight:600;color:var(--muted);
+    display:flex;align-items:center;gap:8px}
+  .roundhdr .rchev{font-size:12px;color:var(--muted);transition:transform .2s}
+  .roundhdr.ropen .rchev{transform:rotate(180deg)}
+  .roundbox{display:none}
+  .roundbox.ropen{display:block;margin-bottom:6px}
   .mcard{background:var(--card);border-radius:14px;margin-bottom:9px;overflow:hidden;
     box-shadow:0 1px 2px rgba(14,27,42,.05)}
   .mhead{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;
@@ -352,7 +360,7 @@ if (isConfigured) {
 // ══════════════════════════════════════════════
 let state = { results:{}, knockouts:[], pot:0 };
 let isAdmin = false;
-let ui = { tab:'stand', open:{}, player:0 };
+let ui = { tab:'stand', open:{}, roundOpen:{}, player:0 };
 let syncStatus = 'ok'; // ok | syncing | err
 
 function setSyncStatus(s) {
@@ -550,13 +558,19 @@ function scoreWidget(m){
 function renderMatches(){
   const ms = allMatches();
   let h=`<div class="eyebrow">Wedstrijden & uitslagen</div>`;
-  if(!isAdmin) h+=`<p style="color:var(--muted);font-size:13px;margin:0 0 12px 2px">Uitslagen worden ingevuld door de admin. Klik op een match om de voorspellingen te zien.</p>`;
+  if(!isAdmin) h+=`<p style="color:var(--muted);font-size:13px;margin:0 0 12px 2px">Uitslagen worden ingevuld door de admin. Tik op een speeldag om de wedstrijden te zien.</p>`;
   ROUND_DEFS.forEach(rd=>{
     const list = ms.filter(m=>m.round===rd.key);
     if(!list.length) return;
-    h+=`<div class="roundhdr"><h2>${rd.key}</h2><span class="ml">×${fmt(rd.mult)}</span></div>`;
+    const done = list.filter(m=>parse(m.result)).length;
+    const isRoundOpen = !!ui.roundOpen[rd.key];
+    h+=`<div class="roundhdr ${isRoundOpen?'ropen':''}" data-round="${rd.key}">
+      <h2>${rd.key}</h2><span class="ml">×${fmt(rd.mult)}</span>
+      <span class="rcount">${done}/${list.length} ✓ <span class="rchev">▼</span></span>
+    </div>
+    <div class="roundbox ${isRoundOpen?'ropen':''}" data-roundbox="${rd.key}">`;
     list.forEach(m=>{
-      const done=!!parse(m.result);
+      const mdone=!!parse(m.result);
       const isOpen=ui.open[m.id];
       h+=`<div class="mcard ${isOpen?'open':''}" data-card="${m.id}">
         <div class="mhead" data-toggle="${m.id}">
@@ -564,7 +578,7 @@ function renderMatches(){
             <div class="tn">${m.name||'—'}</div>
             <div class="badges">
               ${m.belgian?'<span class="bdg bel">🇧🇪 ×2</span>':''}
-              <span class="bdg ${done?'done':'open'}">${done?'Uitslag ✓':'Nog niet gespeeld'}</span>
+              <span class="bdg ${mdone?'done':'open'}">${mdone?'Uitslag ✓':'Nog niet gespeeld'}</span>
             </div>
           </div>
           ${scoreWidget(m)}
@@ -572,6 +586,7 @@ function renderMatches(){
         <div class="preds">${predsHTML(m)}</div>
       </div>`;
     });
+    h+=`</div>`;
   });
   if(isAdmin) h+=`<button class="addbtn" id="addMatch">+ Knockout-wedstrijd toevoegen</button>`;
   $('#view').innerHTML=h;
@@ -695,6 +710,14 @@ document.getElementById('tabs').addEventListener('click',e=>{
 });
 
 document.getElementById('view').addEventListener('click',e=>{
+  const rh=e.target.closest('[data-round]');
+  if(rh){
+    const k=rh.dataset.round; ui.roundOpen[k]=!ui.roundOpen[k];
+    rh.classList.toggle('ropen',ui.roundOpen[k]);
+    const box=document.querySelector(`[data-roundbox="${CSS.escape(k)}"]`);
+    if(box) box.classList.toggle('ropen',ui.roundOpen[k]);
+    return;
+  }
   const tog=e.target.closest('[data-toggle]');
   if(tog && !e.target.closest('.score-edit')){
     const id=tog.dataset.toggle; ui.open[id]=!ui.open[id];
