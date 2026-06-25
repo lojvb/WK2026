@@ -223,6 +223,10 @@
   .ptile .ps{font-family:var(--disp);font-size:18px;letter-spacing:.5px;display:flex;align-items:baseline;gap:5px}
   .ptile .ps .pt{font-family:var(--body);font-size:11px;font-weight:800;opacity:.85}
   .nores{color:var(--muted);font-size:13px;padding:8px 2px 2px;font-style:italic}
+  .mini-edit{font:inherit;font-weight:800;font-size:10px;letter-spacing:.5px;text-transform:uppercase;
+    padding:3px 10px;border-radius:99px;border:1.5px solid var(--brandA);background:#fff;color:var(--brandA);
+    cursor:pointer}
+  .mini-edit:active{transform:scale(.95)}
   .addbtn{width:100%;margin-top:14px;background:none;border:2px dashed var(--ink);
     color:var(--ink);font:inherit;font-weight:800;padding:15px;border-radius:14px;cursor:pointer;
     text-transform:uppercase;letter-spacing:.5px}
@@ -732,6 +736,8 @@ function renderMatches(){
       const isOpen=ui.open[m.id];
       const parts=(m.name||'').split(' - ');
       const home=parts[0]||'—', away=parts[1]||'';
+      const isKO=(''+m.id).charAt(0)==='k';
+      const koIdx=isKO?parseInt((''+m.id).slice(1)):-1;
       h+=`<div class="fix mcard ${isOpen?'open':''}" data-card="${m.id}">
         <div class="fix-head" data-toggle="${m.id}">
           <div class="team home">${home}</div>
@@ -741,6 +747,7 @@ function renderMatches(){
         <div class="fix-meta">
           ${m.belgian?'<span class="bdg bel">🇧🇪 ×2</span>':''}
           <span class="bdg ${mdone?'done':'open'}">${mdone?'Uitslag ✓':'Nog niet gespeeld'}</span>
+          ${(isAdmin&&isKO)?`<button class="mini-edit" data-edit="${koIdx}">✏️ Bewerken</button>`:''}
         </div>
         <div class="preds">${predsHTML(m)}</div>
       </div>`;
@@ -876,6 +883,8 @@ document.getElementById('tabs').addEventListener('click',e=>{
 });
 
 document.getElementById('view').addEventListener('click',e=>{
+  const ed=e.target.closest('[data-edit]');
+  if(ed){ openEditMatch(parseInt(ed.dataset.edit)); return; }
   const rh=e.target.closest('[data-round]');
   if(rh){
     const k=rh.dataset.round; ui.roundOpen[k]=!ui.roundOpen[k];
@@ -932,6 +941,63 @@ function doLogin(){
   } else {
     document.getElementById('loginErr').style.display='block';
   }
+}
+
+function openEditMatch(idx){
+  const ko=(state.knockouts||[])[idx];
+  if(!ko){ toast('Wedstrijd niet gevonden'); return; }
+  const curRes = (state.results['k'+idx]!==undefined) ? state.results['k'+idx] : (ko.result||'');
+  const cr = parse(curRes);
+  const opts=ROUND_DEFS.slice(3).map(r=>`<option value="${r.key}" ${r.key===ko.round?'selected':''}>${r.key} (×${fmt(r.mult)})</option>`).join('');
+  $('#sheet').innerHTML=`<h3>Wedstrijd bewerken</h3>
+    <div class="field"><label>Ronde</label><select id="f_round">${opts}</select></div>
+    <div class="field"><label>Wedstrijd (bv. België - Frankrijk)</label>
+      <input id="f_name" placeholder="Thuis - Uit" value="${(ko.name||'').replace(/"/g,'&quot;')}"></div>
+    <div class="field"><label>Officiële uitslag (optioneel)</label>
+      <div class="mini"><input id="f_rh" type="number" min="0" inputmode="numeric" style="width:54px" value="${cr?cr[0]:''}">
+      <span class="dash">-</span>
+      <input id="f_ra" type="number" min="0" inputmode="numeric" style="width:54px" value="${cr?cr[1]:''}"></div></div>
+    <div class="field"><label>Voorspellingen per speler</label>
+      ${DATA.players.map((nm,i)=>{
+        const pv=parse(ko.preds[i]||'');
+        return `<div class="predform"><span class="pn">${nm}</span>
+        <div class="mini"><input class="kh" data-i="${i}" type="number" min="0" inputmode="numeric" value="${pv?pv[0]:''}">
+        <span class="dash">-</span>
+        <input class="ka" data-i="${i}" type="number" min="0" inputmode="numeric" value="${pv?pv[1]:''}"></div></div>`;}).join('')}
+    </div>
+    <div class="actions">
+      <button class="btn-ghost" id="cancelEdit">Annuleer</button>
+      <button class="btn-primary" id="saveEdit">Opslaan</button>
+    </div>
+    <button class="toolbtn danger" id="delEdit" style="width:100%;margin-top:10px">🗑️ Wedstrijd verwijderen</button>`;
+  $('#modal').classList.add('show');
+  $('#cancelEdit').onclick=closeModal;
+  $('#saveEdit').onclick=()=>{
+    const name=$('#f_name').value.trim();
+    if(!name||!name.includes('-')){ toast('Geef een wedstrijd op als "Thuis - Uit"'); return; }
+    const preds=DATA.players.map((_,i)=>{
+      const h=$(`.kh[data-i="${i}"]`).value, a=$(`.ka[data-i="${i}"]`).value;
+      return (h!==''&&a!=='')?`${parseInt(h)}-${parseInt(a)}`:'';
+    });
+    const rh=$('#f_rh').value, ra=$('#f_ra').value;
+    const res=(rh!==''&&ra!=='')?`${parseInt(rh)}-${parseInt(ra)}`:'';
+    state.knockouts[idx]={round:$('#f_round').value, name, preds, result:res};
+    if(res) state.results['k'+idx]=res; else delete state.results['k'+idx];
+    saveToFirebase(); closeModal(); render(); toast('Wedstrijd bijgewerkt');
+  };
+  $('#delEdit').onclick=()=>{
+    state.knockouts.splice(idx,1);
+    // resultaten opnieuw indexeren (sleutels k0,k1,... verschuiven na verwijderen)
+    const nr={};
+    Object.keys(state.results).forEach(k=>{
+      if(k.charAt(0)!=='k'){ nr[k]=state.results[k]; return; }
+      const j=parseInt(k.slice(1));
+      if(j<idx) nr['k'+j]=state.results[k];
+      else if(j>idx) nr['k'+(j-1)]=state.results[k];
+    });
+    state.results=nr;
+    saveToFirebase(); closeModal(); render(); toast('Wedstrijd verwijderd');
+  };
 }
 
 function openAddMatch(){
