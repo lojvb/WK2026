@@ -227,18 +227,6 @@
     padding:3px 10px;border-radius:99px;border:1.5px solid var(--brandA);background:#fff;color:var(--brandA);
     cursor:pointer}
   .mini-edit:active{transform:scale(.95)}
-  .bdg.pen{background:var(--ink);color:#fff;border-color:var(--ink)}
-  .bdg.warn{background:#FFE2D6;color:#B5300B;border-color:#B5300B}
-  .penpick{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
-  .penlbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
-  .penbtn{font:inherit;font-weight:800;font-size:10px;letter-spacing:.3px;text-transform:uppercase;
-    padding:4px 10px;border-radius:99px;border:1.5px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer}
-  .penbtn.on{background:var(--accent);color:#fff}
-  .penbtn:active{transform:scale(.95)}
-  .pkm{font-family:var(--body);font-size:10px;font-weight:800;background:rgba(0,0,0,.18);
-    padding:1px 5px;border-radius:99px;margin-left:2px}
-  .kpk{font:inherit;font-weight:700;font-size:13px;padding:6px 4px;border:1.5px solid var(--ink);
-    border-radius:9px;background:#fff;min-width:46px}
   .addbtn{width:100%;margin-top:14px;background:none;border:2px dashed var(--ink);
     color:var(--ink);font:inherit;font-weight:800;padding:15px;border-radius:14px;cursor:pointer;
     text-transform:uppercase;letter-spacing:.5px}
@@ -578,36 +566,22 @@ function parse(s){
   const m = s.match(/^(\d+)\s*-\s*(\d+)$/); if(!m) return null;
   return [parseInt(m[1]), parseInt(m[2])];
 }
-// penalty-winnaar uit een score-string: 'h' (thuis), 'a' (uit) of null
-function penOf(s){ const p=(''+s).split('#')[1]; return p==='h'?'h':(p==='a'?'a':null); }
-// nette weergave van een voorspelling/score met kleine penalty-markering
-function shownPred(s, home, away){
+// nette weergave van een score/voorspelling
+function shownPred(s){
   const r=parse(s); if(!r) return s||'—';
-  const pk=penOf(s);
-  if(!pk) return `${r[0]}-${r[1]}`;
-  const who = pk==='h' ? (home||'thuis') : (away||'uit');
-  return `${r[0]}-${r[1]} <span class="pkm">⚽ ${who}</span>`;
+  return `${r[0]}-${r[1]}`;
 }
-// bouw een score-string; voegt #h/#a enkel toe bij gelijkspel
-function mkScore(h,a,pk){
+// bouw een score-string uit twee invoervelden
+function mkScore(h,a){
   if(h===''||a==='') return '';
-  const hi=parseInt(h), ai=parseInt(a);
-  let s=`${hi}-${ai}`;
-  if(pk && hi===ai) s+='#'+pk;
-  return s;
+  return `${parseInt(h)}-${parseInt(a)}`;
 }
 const sign = n => n>0?1:(n<0?-1:0);
-function rawPoints(pred,res,allowPen){
+function rawPoints(pred,res){
   const p=parse(pred), r=parse(res);
   if(!p||!r) return null;
   const [ph,pa]=p,[rh,ra]=r; let s=0;
-  const rPK = allowPen ? penOf(res) : null;   // penalty's enkel vanaf de 16e finale
-  if(rPK && rh===ra){
-    // winnaar-punt enkel voor een gelijkspel-voorspelling mét de juiste penalty-keuze
-    if(ph===pa && penOf(pred)===rPK) s+=2;
-  } else {
-    if(sign(ph-pa)===sign(rh-ra)) s+=2;
-  }
+  if(sign(ph-pa)===sign(rh-ra)) s+=2;   // juiste winnaar (gelijkspel telt ook mee)
   if(ph===rh) s+=1;
   if(pa===ra) s+=1;
   if((ph-pa)===(rh-ra)) s+=1;
@@ -639,7 +613,7 @@ function allMatches(){
   return base.concat(kos);
 }
 function matchPointsForPlayer(m,pi){
-  const raw = rawPoints(m.preds[pi], m.result, isKoRound(m.round));
+  const raw = rawPoints(m.preds[pi], m.result);
   if(raw===null) return null;
   const factor = m.mult * (m.belgian?2:1);
   return { raw, total: raw*factor, factor };
@@ -781,8 +755,6 @@ function renderMatches(){
       const home=parts[0]||'—', away=parts[1]||'';
       const isKO=(''+m.id).charAt(0)==='k';
       const koIdx=isKO?parseInt((''+m.id).slice(1)):-1;
-      const rPK=isKoRound(m.round)?penOf(m.result):null;
-      const isDrawRes=(function(){const r=parse(m.result);return r&&r[0]===r[1];})();
       h+=`<div class="fix mcard ${isOpen?'open':''}" data-card="${m.id}">
         <div class="fix-head" data-toggle="${m.id}">
           <div class="team home">${home}</div>
@@ -792,12 +764,6 @@ function renderMatches(){
         <div class="fix-meta">
           ${m.belgian?'<span class="bdg bel">🇧🇪 ×2</span>':''}
           <span class="bdg ${mdone?'done':'open'}">${mdone?'Uitslag ✓':'Nog niet gespeeld'}</span>
-          ${rPK?`<span class="bdg pen">⚽ pen: ${rPK==='h'?home:away}</span>`:''}
-          ${(isAdmin&&isKoRound(m.round)&&isDrawRes)?`<span class="penpick">
-            <span class="penlbl">Penalty's:</span>
-            <button class="penbtn ${rPK==='h'?'on':''}" data-pen="h" data-pmid="${m.id}">${home}</button>
-            <button class="penbtn ${rPK==='a'?'on':''}" data-pen="a" data-pmid="${m.id}">${away}</button>
-          </span>`:''}
           ${(isAdmin&&isKO)?`<button class="mini-edit" data-edit="${koIdx}">✏️ Bewerken</button>`:''}
           ${(isAdmin&&!isKO&&isKoRound(m.round))?`<button class="mini-edit" data-editbaked="${m.id}">✏️ Bewerken</button>`:''}
         </div>
@@ -874,13 +840,6 @@ function renderRules(){
       border:1.5px solid var(--ink);font-size:13px;line-height:1.5">
       <b>Alles wordt opgeteld.</b> Een perfecte voorspelling =
       <b style="color:var(--accent)">+2 +1 +1 +1 +2 = 7 punten</b> (het maximum per match).
-    </div>
-    <div style="margin-top:10px;padding:13px 14px;background:var(--paper);border-radius:12px;
-      border:1.5px solid var(--ink);font-size:13px;line-height:1.5">
-      <b>⚽ Penalty's (knockoutfase).</b> Eindigt een match gelijk en wordt hij op strafschoppen beslist,
-      dan telt je <b>penalty-keuze als de winnaar</b>. Voorspel je bv. 1-1 mét de juiste penalty-winnaar,
-      dan krijg je de volle <b style="color:var(--accent)">7 punten</b>. Koos je de verkeerde ploeg,
-      dan mis je de +2 voor de winnaar (dus 5). Voorspelde je geen gelijkspel, dan telt de penalty-keuze niet mee.
     </div>`;
   h+=`</div>
   <div class="panel"><h3>Vermenigvuldigers per ronde</h3>
@@ -923,17 +882,12 @@ function setResult(mid){
   if(!isAdmin) return;
   const card=document.querySelector(`.score-edit[data-mid="${mid}"]`);
   if(!card) return;
-  const prev=state.results[mid];
   const h=card.querySelector('.sh').value, a=card.querySelector('.sa').value;
   if(h!==''&&a!=='') state.results[mid]=`${parseInt(h)}-${parseInt(a)}`;
   else delete state.results[mid];
   saveToFirebase();
   renderProgress();
   const m=allMatches().find(x=>''+x.id===''+mid);
-  // knockout: bij wijziging van gelijkspel-status de lijst verversen (penalty-keuze tonen/verbergen)
-  const wasDraw=(()=>{const r=parse(prev);return !!(r&&r[0]===r[1]);})();
-  const isDraw=(()=>{const r=parse(state.results[mid]);return !!(r&&r[0]===r[1]);})();
-  if(m && isKoRound(m.round) && (wasDraw!==isDraw)){ renderMatches(); return; }
   const cardEl=document.querySelector(`.mcard[data-card="${mid}"]`);
   if(cardEl && m){
     cardEl.querySelector('.preds').innerHTML=predsHTML(m);
@@ -941,16 +895,6 @@ function setResult(mid){
     const b=cardEl.querySelector('.bdg.open,.bdg.done');
     if(b){ b.className='bdg '+(done?'done':'open'); b.textContent=done?'Uitslag ✓':'Nog niet gespeeld'; }
   }
-}
-
-function setPenalty(mid, pk){
-  if(!isAdmin) return;
-  const r=parse(state.results[mid]);
-  if(!r || r[0]!==r[1]) return;                 // enkel bij gelijkspel
-  const base=`${r[0]}-${r[1]}`;
-  const cur=penOf(state.results[mid]);
-  state.results[mid]=(cur===pk)?base:base+'#'+pk;  // nogmaals klikken = keuze weghalen
-  saveToFirebase(); renderMatches(); renderProgress();
 }
 
 document.getElementById('tabs').addEventListener('click',e=>{
@@ -962,8 +906,6 @@ document.getElementById('view').addEventListener('click',e=>{
   if(ed){ openEditMatch(parseInt(ed.dataset.edit)); return; }
   const edb=e.target.closest('[data-editbaked]');
   if(edb){ openEditBaked(parseInt(edb.dataset.editbaked)); return; }
-  const pen=e.target.closest('[data-pen]');
-  if(pen){ setPenalty(pen.dataset.pmid, pen.dataset.pen); return; }
   const rh=e.target.closest('[data-round]');
   if(rh){
     const k=rh.dataset.round; ui.roundOpen[k]=!ui.roundOpen[k];
@@ -1022,28 +964,10 @@ function doLogin(){
   }
 }
 
-function wirePenaltyLabels(){
-  const upd=()=>{
-    const nm=($('#f_name')?$('#f_name').value:'')||'';
-    const pp=nm.split(' - '); const home=(pp[0]||'').trim()||'Thuisploeg', away=(pp[1]||'').trim()||'Uitploeg';
-    const fpk=$('#f_pk');
-    if(fpk){ const oh=fpk.querySelector('option[value="h"]'), oa=fpk.querySelector('option[value="a"]');
-      if(oh) oh.textContent=`${home} wint na penalty's`; if(oa) oa.textContent=`${away} wint na penalty's`; }
-    document.querySelectorAll('.kpk').forEach(sel=>{
-      const oh=sel.querySelector('option[value="h"]'), oa=sel.querySelector('option[value="a"]');
-      if(oh) oh.textContent=home; if(oa) oa.textContent=away;
-    });
-  };
-  const ni=$('#f_name'); if(ni) ni.addEventListener('input',upd);
-  upd();
-}
-
 function openEditBaked(id){
   const m = allMatches().find(x=>''+x.id===''+id);
   if(!m){ toast('Wedstrijd niet gevonden'); return; }
-  const cr = parse(m.result), crPK = penOf(m.result);
-  const _pp=(m.name||'').split(' - '); const eHome=_pp[0]||'Thuis', eAway=_pp[1]||'Uit';
-  const pkOpt=(v,sel)=>`<option value="${v}" ${sel===v?'selected':''}>`;
+  const cr = parse(m.result);
   $('#sheet').innerHTML=`<h3>Wedstrijd bewerken</h3>
     <div class="field"><label>Wedstrijd (bv. België - Frankrijk)</label>
       <input id="f_name" placeholder="Thuis - Uit" value="${(m.name||'').replace(/"/g,'&quot;')}"></div>
@@ -1051,18 +975,13 @@ function openEditBaked(id){
       <div class="mini"><input id="f_rh" type="number" min="0" inputmode="numeric" style="width:54px" value="${cr?cr[0]:''}">
       <span class="dash">-</span>
       <input id="f_ra" type="number" min="0" inputmode="numeric" style="width:54px" value="${cr?cr[1]:''}"></div></div>
-    <div class="field"><label>Penalty-winnaar (enkel bij gelijkspel)</label>
-      <select id="f_pk">${pkOpt('',crPK)}— niet op penalty's —</option>
-        ${pkOpt('h',crPK)}${eHome} wint na penalty's</option>
-        ${pkOpt('a',crPK)}${eAway} wint na penalty's</option></select></div>
-    <div class="field"><label>Voorspellingen per speler — bij gelijkspel ook penalty-keuze</label>
+    <div class="field"><label>Voorspellingen per speler</label>
       ${DATA.players.map((nm,i)=>{
-        const pv=parse(m.preds[i]||''), ppk=penOf(m.preds[i]||'');
+        const pv=parse(m.preds[i]||'');
         return `<div class="predform"><span class="pn">${nm}</span>
         <div class="mini"><input class="kh" data-i="${i}" type="number" min="0" inputmode="numeric" value="${pv?pv[0]:''}">
         <span class="dash">-</span>
-        <input class="ka" data-i="${i}" type="number" min="0" inputmode="numeric" value="${pv?pv[1]:''}">
-        <select class="kpk" data-i="${i}" title="penalty-keuze bij gelijkspel">${pkOpt('',ppk)}penalty?</option>${pkOpt('h',ppk)}${eHome}</option>${pkOpt('a',ppk)}${eAway}</option></select></div></div>`;}).join('')}
+        <input class="ka" data-i="${i}" type="number" min="0" inputmode="numeric" value="${pv?pv[1]:''}"></div></div>`;}).join('')}
     </div>
     <div class="actions">
       <button class="btn-ghost" id="cancelEditB">Annuleer</button>
@@ -1075,10 +994,10 @@ function openEditBaked(id){
     if(!name||!name.includes('-')){ toast('Geef een wedstrijd op als "Thuis - Uit"'); return; }
     const preds=DATA.players.map((_,i)=>{
       const h=$(`.kh[data-i="${i}"]`).value, a=$(`.ka[data-i="${i}"]`).value;
-      return mkScore(h,a,$(`.kpk[data-i="${i}"]`).value);
+      return mkScore(h,a);
     });
     const rh=$('#f_rh').value, ra=$('#f_ra').value;
-    const res=mkScore(rh,ra,$('#f_pk').value);
+    const res=mkScore(rh,ra);
     if(!state.nameOverrides) state.nameOverrides={};
     if(!state.predOverrides) state.predOverrides={};
     state.nameOverrides[id]=name;
@@ -1092,10 +1011,8 @@ function openEditMatch(idx){
   const ko=(state.knockouts||[])[idx];
   if(!ko){ toast('Wedstrijd niet gevonden'); return; }
   const curRes = (state.results['k'+idx]!==undefined) ? state.results['k'+idx] : (ko.result||'');
-  const cr = parse(curRes), crPK = penOf(curRes);
-  const _pp=(ko.name||'').split(' - '); const eHome=_pp[0]||'Thuis', eAway=_pp[1]||'Uit';
+  const cr = parse(curRes);
   const opts=ROUND_DEFS.slice(3).map(r=>`<option value="${r.key}" ${r.key===ko.round?'selected':''}>${r.key} (×${fmt(r.mult)})</option>`).join('');
-  const pkOpt=(v,sel)=>`<option value="${v}" ${sel===v?'selected':''}>`;
   $('#sheet').innerHTML=`<h3>Wedstrijd bewerken</h3>
     <div class="field"><label>Ronde</label><select id="f_round">${opts}</select></div>
     <div class="field"><label>Wedstrijd (bv. België - Frankrijk)</label>
@@ -1104,18 +1021,13 @@ function openEditMatch(idx){
       <div class="mini"><input id="f_rh" type="number" min="0" inputmode="numeric" style="width:54px" value="${cr?cr[0]:''}">
       <span class="dash">-</span>
       <input id="f_ra" type="number" min="0" inputmode="numeric" style="width:54px" value="${cr?cr[1]:''}"></div></div>
-    <div class="field"><label>Penalty-winnaar (enkel bij gelijkspel)</label>
-      <select id="f_pk">${pkOpt('',crPK)}— niet op penalty's —</option>
-        ${pkOpt('h',crPK)}${eHome} wint na penalty's</option>
-        ${pkOpt('a',crPK)}${eAway} wint na penalty's</option></select></div>
-    <div class="field"><label>Voorspellingen per speler — bij gelijkspel ook penalty-keuze</label>
+    <div class="field"><label>Voorspellingen per speler</label>
       ${DATA.players.map((nm,i)=>{
-        const pv=parse(ko.preds[i]||''), ppk=penOf(ko.preds[i]||'');
+        const pv=parse(ko.preds[i]||'');
         return `<div class="predform"><span class="pn">${nm}</span>
         <div class="mini"><input class="kh" data-i="${i}" type="number" min="0" inputmode="numeric" value="${pv?pv[0]:''}">
         <span class="dash">-</span>
-        <input class="ka" data-i="${i}" type="number" min="0" inputmode="numeric" value="${pv?pv[1]:''}">
-        <select class="kpk" data-i="${i}" title="penalty-keuze bij gelijkspel">${pkOpt('',ppk)}penalty?</option>${pkOpt('h',ppk)}${eHome}</option>${pkOpt('a',ppk)}${eAway}</option></select></div></div>`;}).join('')}
+        <input class="ka" data-i="${i}" type="number" min="0" inputmode="numeric" value="${pv?pv[1]:''}"></div></div>`;}).join('')}
     </div>
     <div class="actions">
       <button class="btn-ghost" id="cancelEdit">Annuleer</button>
@@ -1129,11 +1041,10 @@ function openEditMatch(idx){
     if(!name||!name.includes('-')){ toast('Geef een wedstrijd op als "Thuis - Uit"'); return; }
     const preds=DATA.players.map((_,i)=>{
       const h=$(`.kh[data-i="${i}"]`).value, a=$(`.ka[data-i="${i}"]`).value;
-      const pk=$(`.kpk[data-i="${i}"]`).value;
-      return mkScore(h,a,pk);
+      return mkScore(h,a);
     });
     const rh=$('#f_rh').value, ra=$('#f_ra').value;
-    const res=mkScore(rh,ra,$('#f_pk').value);
+    const res=mkScore(rh,ra);
     state.knockouts[idx]={round:$('#f_round').value, name, preds, result:res};
     if(res) state.results['k'+idx]=res; else delete state.results['k'+idx];
     saveToFirebase(); closeModal(); render(); toast('Wedstrijd bijgewerkt');
@@ -1163,36 +1074,29 @@ function openAddMatch(){
       <div class="mini"><input id="f_rh" type="number" min="0" inputmode="numeric" style="width:54px">
       <span class="dash">-</span>
       <input id="f_ra" type="number" min="0" inputmode="numeric" style="width:54px"></div></div>
-    <div class="field"><label>Penalty-winnaar (enkel bij gelijkspel)</label>
-      <select id="f_pk"><option value="">— niet op penalty's —</option>
-        <option value="h">Thuisploeg wint na penalty's</option>
-        <option value="a">Uitploeg wint na penalty's</option></select></div>
-    <div class="field"><label>Voorspellingen per speler — bij gelijkspel ook penalty-keuze</label>
+    <div class="field"><label>Voorspellingen per speler</label>
       ${DATA.players.map((nm,i)=>`<div class="predform"><span class="pn">${nm}</span>
         <div class="mini"><input class="kh" data-i="${i}" type="number" min="0" inputmode="numeric">
         <span class="dash">-</span>
-        <input class="ka" data-i="${i}" type="number" min="0" inputmode="numeric">
-        <select class="kpk" data-i="${i}" title="penalty-keuze bij gelijkspel"><option value="">penalty?</option><option value="h">Thuis</option><option value="a">Uit</option></select></div></div>`).join('')}
+        <input class="ka" data-i="${i}" type="number" min="0" inputmode="numeric"></div></div>`).join('')}
     </div>
     <div class="actions">
       <button class="btn-ghost" id="cancelAdd">Annuleer</button>
       <button class="btn-primary" id="saveAdd">Toevoegen</button>
     </div>`;
   $('#modal').classList.add('show');
-  wirePenaltyLabels();
   $('#cancelAdd').onclick=closeModal;
   $('#saveAdd').onclick=()=>{
     const name=$('#f_name').value.trim();
     if(!name||!name.includes('-')){ toast('Geef een wedstrijd op als "Thuis - Uit"'); return; }
     const preds=DATA.players.map((_,i)=>{
       const h=$(`.kh[data-i="${i}"]`).value, a=$(`.ka[data-i="${i}"]`).value;
-      const pk=$(`.kpk[data-i="${i}"]`).value;
-      return mkScore(h,a,pk);
+      return mkScore(h,a);
     });
     const rh=$('#f_rh').value, ra=$('#f_ra').value;
     if(!state.knockouts) state.knockouts=[];
     state.knockouts.push({round:$('#f_round').value, name, preds,
-      result:mkScore(rh,ra,$('#f_pk').value)});
+      result:mkScore(rh,ra)});
     saveToFirebase(); closeModal(); ui.tab='matches'; render(); toast('Wedstrijd toegevoegd');
   };
 }
