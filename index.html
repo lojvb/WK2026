@@ -88,6 +88,12 @@
     color:rgba(255,255,255,.85);animation:ticker 18s linear infinite}
   .ticker-track span{padding:0 14px}
   .ticker-track span b{color:var(--lime)}
+  @keyframes flick{
+    0%,18%,22%,25%,53%,57%,100%{opacity:1;text-shadow:0 0 8px rgba(198,255,26,.95)}
+    20%,24%,55%{opacity:.3;text-shadow:none}
+  }
+  .flick{color:#C6FF1A;font-weight:800;animation:flick 1.5s linear infinite}
+  @media (prefers-reduced-motion: reduce){ .flick{animation:none;opacity:1} }
 
   main{max-width:680px;margin:0 auto;padding:18px 14px 24px}
   #view>*{animation:pop .5s cubic-bezier(.2,.7,.2,1) both}
@@ -403,8 +409,8 @@
     <div class="sync"><span class="dot" id="syncDot"></span><span id="syncLbl">Verbonden</span></div>
   </div>
   <div class="ticker"><div class="ticker-track">
-    <span>⚽ WK 2026</span><span><b>PRONOSTIEK</b></span><span>VRIENDENPOULE</span><span>12 SPELERS</span><span>🏆 WIE WINT DE POT?</span><span>💧 VERGEET NIET VOLDOENDE TE DRINKEN MET DEZE TEMPERATUREN</span>
-    <span>⚽ WK 2026</span><span><b>PRONOSTIEK</b></span><span>VRIENDENPOULE</span><span>12 SPELERS</span><span>🏆 WIE WINT DE POT?</span><span>💧 VERGEET NIET VOLDOENDE TE DRINKEN MET DEZE TEMPERATUREN</span>
+    <span>⚽ WK 2026</span><span><b>PRONOSTIEK</b></span><span>VRIENDENPOULE</span><span>12 SPELERS</span><span>🏆 WIE WINT DE POT?</span><span class="flick">🔥 MATTHIEU DOE NU IS U BEST ZEG!!!!</span>
+    <span>⚽ WK 2026</span><span><b>PRONOSTIEK</b></span><span>VRIENDENPOULE</span><span>12 SPELERS</span><span>🏆 WIE WINT DE POT?</span><span class="flick">🔥 MATTHIEU DOE NU IS U BEST ZEG!!!!</span>
   </div></div>
 </header>
 
@@ -740,7 +746,9 @@ function renderMatches(){
   if(!isAdmin) h+=`<p style="color:var(--muted);font-size:13px;margin:0 0 12px 2px">Uitslagen worden ingevuld door de admin. Tik op een speeldag om de wedstrijden te zien.</p>`;
   ROUND_DEFS.forEach(rd=>{
     const list = ms.filter(m=>m.round===rd.key);
-    if(!list.length) return;
+    const koRound = isKoRound(rd.key);
+    // lege rondes verbergen, behalve knockoutrondes voor de admin (zodat die kunnen aanvullen)
+    if(!list.length && !(isAdmin && koRound)) return;
     const done = list.filter(m=>parse(m.result)).length;
     const isRoundOpen = !!ui.roundOpen[rd.key];
     h+=`<div class="sectbar ${isRoundOpen?'ropen':''}" data-round="${rd.key}">
@@ -770,9 +778,9 @@ function renderMatches(){
         <div class="preds">${predsHTML(m)}</div>
       </div>`;
     });
+    if(isAdmin && koRound) h+=`<button class="addbtn" data-addround="${rd.key}">+ Wedstrijd toevoegen aan ${rd.key}</button>`;
     h+=`</div>`;
   });
-  if(isAdmin) h+=`<button class="addbtn" id="addMatch">+ Knockout-wedstrijd toevoegen</button>`;
   $('#view').innerHTML=h;
 }
 
@@ -856,8 +864,12 @@ function renderRules(){
   </div>
   ${isAdmin ? `<div class="panel"><h3>Admin tools</h3>
     <div class="toolrow">
+      <button class="toolbtn" id="restorePredsBtn">↺ Knockout-voorspellingen herstellen</button>
       <button class="toolbtn danger" id="resetBtn">Uitslagen wissen</button>
-    </div></div>` : ''}`;
+    </div>
+    <p style="color:var(--muted);font-size:12px;margin:10px 2px 0">
+      "Herstellen" zet alle knockout-voorspellingen terug naar de waarden in de app (uit de Excel) en wist handmatige aanpassingen/typefouten.</p>
+    </div>` : ''}`;
   $('#view').innerHTML=h;
 }
 
@@ -921,8 +933,10 @@ document.getElementById('view').addEventListener('click',e=>{
   }
   const pl=e.target.closest('[data-pl]');
   if(pl){ ui.player=+pl.dataset.pl; renderPlayers(); return; }
-  if(e.target.id==='addMatch'){ openAddMatch(); return; }
+  const addr=e.target.closest('[data-addround]');
+  if(addr){ openAddMatch(addr.dataset.addround); return; }
   if(e.target.id==='resetBtn'){ openReset(); return; }
+  if(e.target.id==='restorePredsBtn'){ openRestorePreds(); return; }
 });
 
 document.getElementById('view').addEventListener('input',e=>{
@@ -1064,8 +1078,8 @@ function openEditMatch(idx){
   };
 }
 
-function openAddMatch(){
-  const opts=ROUND_DEFS.slice(3).map(r=>`<option value="${r.key}">${r.key} (×${fmt(r.mult)})</option>`).join('');
+function openAddMatch(preRound){
+  const opts=ROUND_DEFS.slice(3).map(r=>`<option value="${r.key}" ${r.key===preRound?'selected':''}>${r.key} (×${fmt(r.mult)})</option>`).join('');
   $('#sheet').innerHTML=`<h3>Knockout-wedstrijd</h3>
     <div class="field"><label>Ronde</label><select id="f_round">${opts}</select></div>
     <div class="field"><label>Wedstrijd (bv. België - Frankrijk)</label>
@@ -1098,6 +1112,24 @@ function openAddMatch(){
     state.knockouts.push({round:$('#f_round').value, name, preds,
       result:mkScore(rh,ra)});
     saveToFirebase(); closeModal(); ui.tab='matches'; render(); toast('Wedstrijd toegevoegd');
+  };
+}
+
+function openRestorePreds(){
+  $('#sheet').innerHTML=`<h3>Voorspellingen herstellen?</h3>
+    <p style="color:var(--muted);font-size:14px;margin:-6px 0 16px">
+      Alle knockout-voorspellingen worden teruggezet naar de waarden in de app (uit de Excel).
+      Handmatige aanpassingen of typefouten verdwijnen. Ingevulde uitslagen blijven behouden.</p>
+    <div class="actions">
+      <button class="btn-ghost" id="cancelRestore">Annuleer</button>
+      <button class="btn-primary" id="okRestore">Ja, herstellen</button>
+    </div>`;
+  $('#modal').classList.add('show');
+  $('#cancelRestore').onclick=closeModal;
+  $('#okRestore').onclick=()=>{
+    state.predOverrides={};
+    state.nameOverrides={};
+    saveToFirebase(); closeModal(); render(); toast('Voorspellingen hersteld');
   };
 }
 
